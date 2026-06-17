@@ -1,0 +1,286 @@
+"""
+tests/test_api.py
+-----------------
+Integration tests for the optimize API endpoints.
+
+Uses FastAPI's TestClient (synchronous). When using TestClient, FastAPI
+BackgroundTasks execute synchronously before the test can send the next
+request — so after POST /optimize, the job will already be complete by the
+time we poll /status.
+
+Covers:
+  - GET /api/v1/health → 200
+  - POST /api/v1/optimize (valid)  → 200, returns job_id
+  - POST /api/v1/optimize (bad weights)  → 422
+  - POST /api/v1/optimize (Rs >= Rc)     → 422
+  - POST /api/v1/optimize (missing field) → 422 (Pydantic)
+  - GET /api/v1/optimize/{job_id}/status → 200 with valid status value
+  - GET /api/v1/optimize/unknown-id/status → 404
+  - GET /api/v1/optimize/{job_id}/result  → 200 with correct shape
+  - GET /api/v1/optimize/unknown-id/result → 404
+  - Result payload has all required keys
+  - best_positions shape = [[x,y], ...] with num_nodes entries
+  - fitness_history is non-empty
+  - coverage_ratio and connectivity_ratio in [0, 1]
+"""
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app.main import app
+from app.jobs import job_store
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def clear_job_store():
+    """Wipe the in-memory store before every test to prevent state leakage."""
+    job_store.clear_all()
+    yield
+    job_store.clear_all()
+
+
+@pytest.fixture(scope="module")
+def client():
+    """Shared TestClient for the module. BackgroundTasks run synchronously."""
+    with TestClient(app, raise_server_exceptions=True) as c:
+        yield c
+
+
+# ---------------------------------------------------------------------------
+# Minimal fast config (small field, few nodes, few iterations)
+# ---------------------------------------------------------------------------
+
+FAST_CONFIG = {
+    "area": {"width": 50.0, "height": 50.0},
+    "num_nodes": 5,
+    "sensing_radius": 8.0,
+    "comm_radius": 16.0,
+    "initial_energy": 1.0,
+    "weights": {"w1": 0.5, "w2": 0.25, "w3": 0.25},
+    "pso_params": {
+        "swarm_size": 5,
+        "iterations": 5,
+        "inertia": 0.7,
+        "c1": 1.5,
+        "c2": 1.5,
+    },
+    "use_gpu": False,
+    "use_vdcoa": False,
+    "seed": 42,
+    "restricted_areas": [],
+    "non_critical_areas": [],
+    "strategy": "pso",
+    "cell_size": 5.0,
+}
+
+
+def post_optimize(client, config=None):
+    """Helper: POST /optimize and return the Response object."""
+    return client.post("/api/v1/optimize", json=config or FAST_CONFIG)
+
+
+# ---------------------------------------------------------------------------
+# Health endpoint
+# ---------------------------------------------------------------------------
+
+class TestHealth:
+
+    def test_health_returns_200(self, client):
+        resp = client.get("/api/v1/health")
+        assert resp.status_code == 200
+
+    def test_health_body(self, client):
+        resp = client.get("/api/v1/health")
+        assert resp.json() == {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# POST /api/v1/optimize — submission
+# ---------------------------------------------------------------------------
+
+class TestPostOptimize:
+
+    def test_valid_config_returns_200(self, client):
+        resp = post_optimize(client)
+        assert resp.status_code == 200
+
+    def test_valid_config_returns_job_id(self, client):
+        resp = post_optimize(client)
+        body = resp.json()
+        assert "job_id" in body
+        assert isinstance(body["job_id"], str)
+        assert len(body["job_id"]) > 0
+
+    def test_valid_config_returns_pending_status(self, client):
+        """Status in the POST response is 'pending' (before background runs)."""
+        resp = post_optimize(client)
+        body = resp.json()
+        assert "status" in body
+        # The background task may or may not have completed; status field must exist
+        assert body["status"] in ("pending", "running", "complete")
+
+    def test_bad_weights_returns_422(self, client):
+        bad = {**FAST_CONFIG, "weights": {"w1": 0.0, "w2": 0.0, "w3": 0.0}}
+        resp = post_optimize(client, bad)
+        assert resp.status_code == 422
+
+    def test_rs_equals_rc_returns_422(self, client):
+        bad = {**FAST_CONFIG, "sensing_radius": 16.0, "comm_radius": 16.0}
+        resp = post_optimize(client, bad)
+        assert resp.status_code == 422
+
+    def test_rs_greater_than_rc_returns_422(self, client):
+        bad = {**FAST_CONFIG, "sensing_radius": 30.0, "comm_radius": 10.0}
+        resp = post_optimize(client, bad)
+        assert resp.status_code == 422
+
+    def test_missing_required_field_returns_422(self, client):
+        """Pydantic should reject a payload missing 'area'."""
+        bad = {k: v for k, v in FAST_CONFIG.items() if k != "area"}
+        resp = post_optimize(client, bad)
+        assert resp.status_code == 422
+
+    def test_unknown_strategy_returns_422(self, client):
+        bad = {**FAST_CONFIG, "strategy": "genetic_algorithm"}
+        resp = post_optimize(client, bad)
+        assert resp.status_code == 422
+
+    def test_negative_num_nodes_returns_422(self, client):
+        bad = {**FAST_CONFIG, "num_nodes": 0}
+        resp = post_optimize(client, bad)
+        assert resp.status_code == 422
+
+    def test_two_jobs_get_different_ids(self, client):
+        id1 = post_optimize(client).json()["job_id"]
+        id2 = post_optimize(client).json()["job_id"]
+        assert id1 != id2
+
+
+# ---------------------------------------------------------------------------
+# GET /api/v1/optimize/{job_id}/status
+# ---------------------------------------------------------------------------
+
+class TestGetStatus:
+
+    def test_known_job_returns_200(self, client):
+        job_id = post_optimize(client).json()["job_id"]
+        resp = client.get(f"/api/v1/optimize/{job_id}/status")
+        assert resp.status_code == 200
+
+    def test_known_job_has_status_field(self, client):
+        job_id = post_optimize(client).json()["job_id"]
+        body = client.get(f"/api/v1/optimize/{job_id}/status").json()
+        assert "status" in body
+
+    def test_known_job_status_is_valid_value(self, client):
+        job_id = post_optimize(client).json()["job_id"]
+        status = client.get(f"/api/v1/optimize/{job_id}/status").json()["status"]
+        assert status in ("pending", "running", "complete", "failed")
+
+    def test_known_job_returns_job_id_field(self, client):
+        job_id = post_optimize(client).json()["job_id"]
+        body = client.get(f"/api/v1/optimize/{job_id}/status").json()
+        assert body["job_id"] == job_id
+
+    def test_unknown_job_id_returns_404(self, client):
+        resp = client.get("/api/v1/optimize/does-not-exist/status")
+        assert resp.status_code == 404
+
+    def test_background_task_completes(self, client):
+        """
+        With TestClient, BackgroundTasks run synchronously.
+        After POST the job should be complete when we poll status.
+        """
+        job_id = post_optimize(client).json()["job_id"]
+        status = client.get(f"/api/v1/optimize/{job_id}/status").json()["status"]
+        assert status == "complete"
+
+
+# ---------------------------------------------------------------------------
+# GET /api/v1/optimize/{job_id}/result
+# ---------------------------------------------------------------------------
+
+class TestGetResult:
+
+    def _submit_and_get_result(self, client):
+        job_id = post_optimize(client).json()["job_id"]
+        resp = client.get(f"/api/v1/optimize/{job_id}/result")
+        return job_id, resp
+
+    def test_completed_job_returns_200(self, client):
+        _, resp = self._submit_and_get_result(client)
+        assert resp.status_code == 200
+
+    def test_unknown_job_returns_404(self, client):
+        resp = client.get("/api/v1/optimize/no-such-job/result")
+        assert resp.status_code == 404
+
+    def test_result_has_required_keys(self, client):
+        _, resp = self._submit_and_get_result(client)
+        body = resp.json()
+        required = [
+            "job_id", "status", "best_positions", "coverage_ratio",
+            "connectivity_ratio", "avg_energy", "fitness_history",
+            "coverage_map", "compute_time_seconds", "iterations_run", "gpu_used",
+        ]
+        for key in required:
+            assert key in body, f"Missing key in result: {key}"
+
+    def test_result_status_is_complete(self, client):
+        _, resp = self._submit_and_get_result(client)
+        assert resp.json()["status"] == "complete"
+
+    def test_best_positions_shape(self, client):
+        """best_positions must be a list of [x, y] pairs = num_nodes entries."""
+        _, resp = self._submit_and_get_result(client)
+        positions = resp.json()["best_positions"]
+        assert isinstance(positions, list)
+        assert len(positions) == FAST_CONFIG["num_nodes"]
+        for p in positions:
+            assert len(p) == 2
+
+    def test_coverage_ratio_in_range(self, client):
+        _, resp = self._submit_and_get_result(client)
+        assert 0.0 <= resp.json()["coverage_ratio"] <= 1.0
+
+    def test_connectivity_ratio_in_range(self, client):
+        _, resp = self._submit_and_get_result(client)
+        assert 0.0 <= resp.json()["connectivity_ratio"] <= 1.0
+
+    def test_fitness_history_non_empty(self, client):
+        _, resp = self._submit_and_get_result(client)
+        history = resp.json()["fitness_history"]
+        assert isinstance(history, list)
+        assert len(history) > 0
+
+    def test_fitness_history_length(self, client):
+        """Length = iterations + 1 (initial + one per iter)."""
+        _, resp = self._submit_and_get_result(client)
+        history = resp.json()["fitness_history"]
+        assert len(history) == FAST_CONFIG["pso_params"]["iterations"] + 1
+
+    def test_gpu_used_is_false(self, client):
+        _, resp = self._submit_and_get_result(client)
+        assert resp.json()["gpu_used"] is False
+
+    def test_coverage_map_is_2d_list(self, client):
+        _, resp = self._submit_and_get_result(client)
+        cov_map = resp.json()["coverage_map"]
+        assert isinstance(cov_map, list)
+        assert isinstance(cov_map[0], list)
+
+    def test_result_job_id_matches(self, client):
+        job_id, resp = self._submit_and_get_result(client)
+        assert resp.json()["job_id"] == job_id
+
+    def test_compute_time_positive(self, client):
+        _, resp = self._submit_and_get_result(client)
+        assert resp.json()["compute_time_seconds"] > 0.0
+
+    def test_iterations_run_matches_config(self, client):
+        _, resp = self._submit_and_get_result(client)
+        assert resp.json()["iterations_run"] == FAST_CONFIG["pso_params"]["iterations"]
