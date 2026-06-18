@@ -284,3 +284,110 @@ class TestGetResult:
     def test_iterations_run_matches_config(self, client):
         _, resp = self._submit_and_get_result(client)
         assert resp.json()["iterations_run"] == FAST_CONFIG["pso_params"]["iterations"]
+
+
+# ---------------------------------------------------------------------------
+# POST /api/v1/compare
+# ---------------------------------------------------------------------------
+
+EXPECTED_STRATEGIES = {"random", "grid", "pso", "pso_vdcoa"}
+STRATEGY_METRIC_KEYS = {
+    "strategy", "coverage_ratio", "connectivity_ratio",
+    "avg_energy", "compute_time_seconds",
+}
+
+
+class TestPostCompare:
+
+    def _post_compare(self, client, config=None):
+        return client.post("/api/v1/compare", json=config or FAST_CONFIG)
+
+    # --- Successful requests ---
+
+    def test_valid_config_returns_200(self, client):
+        resp = self._post_compare(client)
+        assert resp.status_code == 200
+
+    def test_response_has_job_id(self, client):
+        body = self._post_compare(client).json()
+        assert "job_id" in body
+        assert isinstance(body["job_id"], str)
+        assert len(body["job_id"]) > 0
+
+    def test_response_status_is_complete(self, client):
+        body = self._post_compare(client).json()
+        assert body["status"] == "complete"
+
+    def test_response_has_results_list(self, client):
+        body = self._post_compare(client).json()
+        assert "results" in body
+        assert isinstance(body["results"], list)
+
+    def test_results_has_four_entries(self, client):
+        results = self._post_compare(client).json()["results"]
+        assert len(results) == 4, f"Expected 4 strategy results, got {len(results)}"
+
+    def test_all_four_strategies_present(self, client):
+        results = self._post_compare(client).json()["results"]
+        returned = {r["strategy"] for r in results}
+        assert returned == EXPECTED_STRATEGIES, (
+            f"Missing strategies: {EXPECTED_STRATEGIES - returned}"
+        )
+
+    def test_each_result_has_metric_keys(self, client):
+        results = self._post_compare(client).json()["results"]
+        for r in results:
+            missing = STRATEGY_METRIC_KEYS - set(r.keys())
+            assert not missing, f"Strategy '{r.get('strategy')}' missing keys: {missing}"
+
+    # --- Metric value ranges ---
+
+    def test_coverage_ratios_in_range(self, client):
+        results = self._post_compare(client).json()["results"]
+        for r in results:
+            assert 0.0 <= r["coverage_ratio"] <= 1.0, (
+                f"{r['strategy']}: coverage_ratio={r['coverage_ratio']}"
+            )
+
+    def test_connectivity_ratios_in_range(self, client):
+        results = self._post_compare(client).json()["results"]
+        for r in results:
+            assert 0.0 <= r["connectivity_ratio"] <= 1.0, (
+                f"{r['strategy']}: connectivity_ratio={r['connectivity_ratio']}"
+            )
+
+    def test_avg_energies_in_range(self, client):
+        results = self._post_compare(client).json()["results"]
+        for r in results:
+            assert 0.0 <= r["avg_energy"] <= 1.0, (
+                f"{r['strategy']}: avg_energy={r['avg_energy']}"
+            )
+
+    def test_compute_times_non_negative(self, client):
+        results = self._post_compare(client).json()["results"]
+        for r in results:
+            assert r["compute_time_seconds"] >= 0.0
+
+    def test_strategy_values_are_strings(self, client):
+        results = self._post_compare(client).json()["results"]
+        for r in results:
+            assert isinstance(r["strategy"], str)
+
+    # --- Invalid requests ---
+
+    def test_bad_weights_returns_422(self, client):
+        bad = {**FAST_CONFIG, "weights": {"w1": 0.0, "w2": 0.0, "w3": 0.0}}
+        assert self._post_compare(client, bad).status_code == 422
+
+    def test_rs_equals_rc_returns_422(self, client):
+        bad = {**FAST_CONFIG, "sensing_radius": 16.0, "comm_radius": 16.0}
+        assert self._post_compare(client, bad).status_code == 422
+
+    def test_missing_area_returns_422(self, client):
+        bad = {k: v for k, v in FAST_CONFIG.items() if k != "area"}
+        assert self._post_compare(client, bad).status_code == 422
+
+    def test_different_calls_return_different_job_ids(self, client):
+        id1 = self._post_compare(client).json()["job_id"]
+        id2 = self._post_compare(client).json()["job_id"]
+        assert id1 != id2
