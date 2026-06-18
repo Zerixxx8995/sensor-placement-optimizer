@@ -15,6 +15,8 @@ Nothing else lives here — no business logic, no algorithm code.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.middleware.error_handler import add_error_handlers
+from app.middleware.request_logger import RequestLoggerMiddleware
 from app.routers.optimize import router as optimize_router
 from app.routers.compare import router as compare_router
 
@@ -41,6 +43,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# RequestLoggerMiddleware registered last → outermost layer (wraps CORS too)
+app.add_middleware(RequestLoggerMiddleware)
+
+# Register global exception handlers
+add_error_handlers(app)
 
 # ---------------------------------------------------------------------------
 # Routers
