@@ -16,6 +16,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers.optimize import router as optimize_router
+from app.routers.compare import router as compare_router
 
 app = FastAPI(
     title="PSO Sensor Placement Optimizer",
@@ -46,6 +47,7 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 
 app.include_router(optimize_router, prefix="/api/v1", tags=["Optimize"])
+app.include_router(compare_router, prefix="/api/v1", tags=["Compare"])
 
 # ---------------------------------------------------------------------------
 # Built-in endpoints
