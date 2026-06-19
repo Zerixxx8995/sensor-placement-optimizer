@@ -213,5 +213,6 @@ db.sqlite3
 *.sln
 *.sw?
 
-# Project Prompt file to ignore
+# Project prompt / planning files - not part of the repo
 PSO_antigravity_prompt.md
+PSO_project_plan.md
