@@ -213,6 +213,10 @@ db.sqlite3
 *.sln
 *.sw?
 
+<<<<<<< HEAD
 # Project prompt / planning files - not part of the repo
 PSO_antigravity_prompt.md
+=======
+# Project Prompt file to ignore
+>>>>>>> feature/frontend-optimize-wire
 PSO_project_plan.md
