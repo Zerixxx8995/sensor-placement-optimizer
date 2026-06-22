@@ -213,5 +213,5 @@ db.sqlite3
 *.sln
 *.sw?
 
-# Project prompt / planning files - not part of the repo
+# Project planning files - not part of the repo
 PSO_project_plan.md
