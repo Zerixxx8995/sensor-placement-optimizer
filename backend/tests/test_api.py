@@ -287,6 +287,38 @@ class TestGetResult:
 
 
 # ---------------------------------------------------------------------------
+# GET /api/v1/optimize/{job_id}/stream
+# ---------------------------------------------------------------------------
+
+class TestGetStream:
+
+    def test_stream_nonexistent_job_returns_404(self, client):
+        resp = client.get("/api/v1/optimize/nonexistent-uuid/stream")
+        assert resp.status_code == 404
+
+    def test_stream_returns_event_stream(self, client):
+        import json
+        resp_submit = client.post("/api/v1/optimize", json=FAST_CONFIG)
+        job_id = resp_submit.json()["job_id"]
+
+        with client.stream("GET", f"/api/v1/optimize/{job_id}/stream") as response:
+            assert response.status_code == 200
+            assert "text/event-stream" in response.headers["content-type"]
+            
+            events = []
+            for line in response.iter_lines():
+                if line.strip().startswith("data: "):
+                    data_str = line.strip()[6:]
+                    event_data = json.loads(data_str)
+                    events.append(event_data)
+                    if event_data.get("event") in ("complete", "failed") or len(events) >= 5:
+                        break
+            
+            assert len(events) > 0
+            assert events[0]["event"] in ("connected", "iteration", "complete")
+
+
+# ---------------------------------------------------------------------------
 # POST /api/v1/compare
 # ---------------------------------------------------------------------------
 

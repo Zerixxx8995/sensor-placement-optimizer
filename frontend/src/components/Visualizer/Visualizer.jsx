@@ -1,37 +1,59 @@
 import React from 'react';
 import GridCanvas from './GridCanvas';
 import LiveMetrics from './LiveMetrics';
+import ParticleLayer from './ParticleLayer';
+import { useSSEStream } from '../../hooks/useSSEStream';
 
 /**
  * Visualizer
  * ----------
  * Parent component that owns the full visualisation panel.
  * Composes GridCanvas (the canvas renderer) and LiveMetrics (the stats bar).
+ * Supports real-time visualization of running jobs using Server-Sent Events (SSE).
  *
  * Props
  * -----
- *  result        {object|null}  OptimizationResult from the backend.
- *  config        {object|null}  The OptimizationConfig that was submitted, used
- *                               to pass sensingRadius / commRadius / area dims
- *                               to GridCanvas.
+ *  result        {object|null}  OptimizationResult from the backend (when complete).
+ *  config        {object|null}  The OptimizationConfig that was submitted.
+ *  jobId         {string|null}  UUID of the active job.
+ *  status        {string|null}  Job execution status ('running', 'complete', etc.).
  */
-export default function Visualizer({ result, config }) {
+export default function Visualizer({ result, config, jobId, status }) {
+  const isRunning = status === 'running';
+
+  // Connect to SSE stream if the job is active
+  const {
+    particles,
+    iteration,
+    bestFitness,
+    bestPositions,
+  } = useSSEStream(isRunning ? jobId : null);
+
   const areaWidth = config?.area?.width ?? 100;
   const areaHeight = config?.area?.height ?? 100;
   const sensingRadius = config?.sensing_radius ?? 10;
   const commRadius = config?.comm_radius ?? 20;
+
+  // Render live positions when running, fallback to final result when complete
+  const displayResult = isRunning
+    ? { best_positions: bestPositions, coverage_map: null }
+    : result;
 
   return (
     <div className="visualizer-container">
       {/* ─── Header ─────────────────────────────────────────────────── */}
       <div className="visualizer-header">
         <div>
-          <h2 className="visualizer-title">Deployment Visualizer</h2>
+          <h2 className="visualizer-title">
+            {isRunning ? 'Optimizing Deployments...' : 'Deployment Visualizer'}
+          </h2>
           <p className="visualizer-subtitle">
-            Coverage heatmap · Sensor nodes · Communication links
+            {isRunning
+              ? 'Real-time swarm convergence · Candidate nodes · Live updates'
+              : 'Coverage heatmap · Sensor nodes · Communication links'}
           </p>
         </div>
-        {result && (
+        {status === 'complete' && result && (
           <div className="vis-badge-group">
             {result.gpu_used && (
               <span className="vis-badge vis-badge--gpu">⚡ GPU</span>
@@ -39,19 +61,54 @@ export default function Visualizer({ result, config }) {
             <span className="vis-badge vis-badge--complete">● Complete</span>
           </div>
         )}
+        {isRunning && (
+          <div className="vis-badge-group">
+            <span
+              className="vis-badge"
+              style={{
+                background: 'rgba(99, 102, 241, 0.15)',
+                color: 'var(--color-primary)',
+                border: '1px solid rgba(99, 102, 241, 0.3)',
+                animation: 'pulse 1.5s infinite',
+              }}
+            >
+              ● Optimizing
+            </span>
+            <style>{`
+              @keyframes pulse {
+                0%   { opacity: 0.6; }
+                50%  { opacity: 1; }
+                100% { opacity: 0.6; }
+              }
+            `}</style>
+          </div>
+        )}
       </div>
 
-      {/* ─── Canvas ─────────────────────────────────────────────────── */}
+      {/* ─── Canvas Layer Stack ─────────────────────────────────────── */}
       <GridCanvas
-        result={result}
+        result={displayResult}
         areaWidth={areaWidth}
         areaHeight={areaHeight}
         sensingRadius={sensingRadius}
         commRadius={commRadius}
-      />
+      >
+        {isRunning && (
+          <ParticleLayer
+            particles={particles}
+            areaWidth={areaWidth}
+            areaHeight={areaHeight}
+          />
+        )}
+      </GridCanvas>
 
       {/* ─── Metrics bar ────────────────────────────────────────────── */}
-      <LiveMetrics result={result} />
+      <LiveMetrics
+        result={result}
+        status={status}
+        liveIteration={iteration}
+        liveFitness={bestFitness}
+      />
     </div>
   );
 }

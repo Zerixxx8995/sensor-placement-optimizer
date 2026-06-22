@@ -10,6 +10,7 @@ no business logic — it just runs the algorithm and records the outcome.
 
 from app.jobs import job_store
 from app.core.pso import run_pso
+from app.core.pso_gpu import run_pso_gpu
 
 
 def run_optimization_job(job_id: str, config: dict) -> None:
@@ -24,8 +25,22 @@ def run_optimization_job(job_id: str, config: dict) -> None:
         config: Raw dict already shaped for core/pso.run_pso().
     """
     job_store.set_running(job_id)
+
+    def on_iteration(g: int, positions, gbest_pos, gbest_fit) -> None:
+        # Publish the iteration updates via the job_store pub/sub queue
+        job_store.publish_iteration(job_id, {
+            "event": "iteration",
+            "iteration": g,
+            "best_positions": gbest_pos.tolist(),
+            "best_fitness": float(gbest_fit),
+            "particles": positions.tolist(),
+        })
+
     try:
-        result = run_pso(config)
+        if config.get("use_gpu"):
+            result = run_pso_gpu(config, on_iteration=on_iteration)
+        else:
+            result = run_pso(config, on_iteration=on_iteration)
         job_store.set_complete(job_id, result)
     except Exception as exc:  # noqa: BLE001
         job_store.set_failed(job_id, str(exc))

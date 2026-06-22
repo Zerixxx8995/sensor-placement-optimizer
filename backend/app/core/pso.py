@@ -82,7 +82,7 @@ def _build_restricted_mask(
     return mask
 
 
-def run_pso(config: dict) -> dict:
+def run_pso(config: dict, on_iteration=None) -> dict:
     """
     Run the PSO optimization and return the best sensor deployment found.
 
@@ -215,6 +215,11 @@ def run_pso(config: dict) -> dict:
             gbest_pos = pbest_pos[current_best_idx].copy()
 
         fitness_history.append(gbest_fit)
+
+        if on_iteration is not None:
+            clamped_positions = np.clip(positions, [0.0, 0.0], [area_W, area_H])
+            clamped_gbest_pos = np.clip(gbest_pos, [0.0, 0.0], [area_W, area_H])
+            on_iteration(g, clamped_positions, clamped_gbest_pos, gbest_fit)
 
     compute_time = time.perf_counter() - t_start
 

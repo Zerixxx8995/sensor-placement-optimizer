@@ -161,7 +161,7 @@ def _get_coverage_energy_kernel():
 # Public entry point
 # ---------------------------------------------------------------------------
 
-def run_pso_gpu(config: dict) -> dict:
+def run_pso_gpu(config: dict, on_iteration=None) -> dict:
     """
     Run PSO with GPU-accelerated fitness evaluation.
 
@@ -177,18 +177,18 @@ def run_pso_gpu(config: dict) -> dict:
             RuntimeWarning,
             stacklevel=2,
         )
-        result = run_pso(config)
+        result = run_pso(config, on_iteration=on_iteration)
         result["gpu_used"] = False
         return result
 
-    return _run_gpu_impl(config)
+    return _run_gpu_impl(config, on_iteration=on_iteration)
 
 
 # ---------------------------------------------------------------------------
 # GPU implementation
 # ---------------------------------------------------------------------------
 
-def _run_gpu_impl(config: dict) -> dict:
+def _run_gpu_impl(config: dict, on_iteration=None) -> dict:
     """
     GPU PSO loop.
 
@@ -312,6 +312,11 @@ def _run_gpu_impl(config: dict) -> dict:
             gbest_pos = pbest_pos[best_idx].copy()
 
         fitness_history.append(gbest_fit)
+
+        if on_iteration is not None:
+            clamped_positions = np.clip(positions, [0.0, 0.0], [area_W, area_H])
+            clamped_gbest_pos = np.clip(gbest_pos, [0.0, 0.0], [area_W, area_H])
+            on_iteration(g, clamped_positions, clamped_gbest_pos, gbest_fit)
 
     compute_time = time.perf_counter() - t_start
 

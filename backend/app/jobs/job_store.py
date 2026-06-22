@@ -10,10 +10,12 @@ No I/O, no HTTP, no business logic — pure state storage.
 """
 
 import threading
+import queue
 from typing import Any
 
 # Module-level store — lives for the lifetime of the process.
 _store: dict[str, dict[str, Any]] = {}
+_subscribers: dict[str, list[queue.Queue]] = {}
 _lock = threading.Lock()
 
 
@@ -25,6 +27,7 @@ def create_job(job_id: str) -> None:
             "result": None,
             "error": None,
         }
+        _subscribers[job_id] = []
 
 
 def get_job(job_id: str) -> dict[str, Any] | None:
@@ -42,19 +45,56 @@ def set_running(job_id: str) -> None:
 
 
 def set_complete(job_id: str, result: dict[str, Any]) -> None:
-    """Transition job to COMPLETE and store its result payload."""
+    """Transition job to COMPLETE, store its result payload, and notify subscribers."""
     with _lock:
         if job_id in _store:
             _store[job_id]["status"] = "complete"
             _store[job_id]["result"] = result
+        if job_id in _subscribers:
+            for q in _subscribers[job_id]:
+                q.put({"event": "complete", "result": result})
 
 
 def set_failed(job_id: str, error: str) -> None:
-    """Transition job to FAILED and record the error message."""
+    """Transition job to FAILED, record the error message, and notify subscribers."""
     with _lock:
         if job_id in _store:
             _store[job_id]["status"] = "failed"
             _store[job_id]["error"] = error
+        if job_id in _subscribers:
+            for q in _subscribers[job_id]:
+                q.put({"event": "failed", "error": error})
+
+
+def subscribe_job(job_id: str) -> queue.Queue:
+    """Subscribe to receive real-time iteration events for a job."""
+    with _lock:
+        q = queue.Queue()
+        if job_id not in _subscribers:
+            _subscribers[job_id] = []
+        _subscribers[job_id].append(q)
+        return q
+
+
+def unsubscribe_job(job_id: str, q: queue.Queue) -> None:
+    """Unsubscribe a queue from job events."""
+    with _lock:
+        if job_id in _subscribers:
+            try:
+                _subscribers[job_id].remove(q)
+            except ValueError:
+                pass
+            if not _subscribers[job_id]:
+                # Keep the entry or clean it up
+                pass
+
+
+def publish_iteration(job_id: str, data: dict) -> None:
+    """Send an iteration update to all active subscribers for this job."""
+    with _lock:
+        if job_id in _subscribers:
+            for q in _subscribers[job_id]:
+                q.put(data)
 
 
 def clear_all() -> None:
@@ -64,3 +104,4 @@ def clear_all() -> None:
     """
     with _lock:
         _store.clear()
+        _subscribers.clear()

@@ -68,8 +68,8 @@ export default function App() {
                 <StatusBadge status={status} />
               </div>
 
-              {/* ── Spinner while running ── */}
-              {(status === 'pending' || status === 'running') && (
+              {/* ── Spinner while pending ── */}
+              {status === 'pending' && (
                 <div style={{
                   display: 'flex',
                   flexDirection: 'column',
@@ -93,7 +93,7 @@ export default function App() {
                     }
                   `}</style>
                   <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem' }}>
-                    Running optimization engine on backend…
+                    Initializing optimization engine on backend…
                   </p>
                 </div>
               )}
@@ -114,9 +114,14 @@ export default function App() {
                 </div>
               )}
 
-              {/* ── Success: Visualizer ── */}
-              {status === 'complete' && result && (
-                <Visualizer result={result} config={lastConfig} />
+              {/* ── Success or Running: Visualizer ── */}
+              {(status === 'running' || status === 'complete') && (
+                <Visualizer
+                  result={result}
+                  config={lastConfig}
+                  jobId={jobId}
+                  status={status}
+                />
               )}
             </div>
           ) : (

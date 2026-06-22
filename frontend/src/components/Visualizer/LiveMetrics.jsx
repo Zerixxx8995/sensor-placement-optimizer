@@ -4,14 +4,19 @@ import React from 'react';
  * LiveMetrics
  * -----------
  * Displays the four key outcome metrics from an optimization result in a
- * compact, styled row.  Designed to live just below the GridCanvas.
+ * compact, styled row. Designed to live just below the GridCanvas.
  *
  * Props
  * -----
- *  result   {object|null}  OptimizationResult.  If null, renders an empty state.
+ *  result         {object|null}  OptimizationResult (final results).
+ *  status         {string|null}  Active job status ('running', 'complete', etc.).
+ *  liveIteration  {number}       Current iteration number during active run.
+ *  liveFitness    {number|null}  Current global best fitness value.
  */
-export default function LiveMetrics({ result }) {
-  if (!result) {
+export default function LiveMetrics({ result, status, liveIteration = 0, liveFitness = null }) {
+  const isRunning = status === 'running';
+
+  if (!result && !isRunning) {
     return (
       <div className="live-metrics live-metrics--empty">
         <span>Run optimization to see live metrics.</span>
@@ -19,11 +24,24 @@ export default function LiveMetrics({ result }) {
     );
   }
 
+  // Extract metrics or fallback depending on running state
+  const bestPositions = isRunning ? (result?.best_positions ?? []) : (result?.best_positions ?? []);
+  const iterationsRun = isRunning ? liveIteration : (result?.iterations_run ?? 0);
+
+  const coverageVal = isRunning ? '--%' : `${((result?.coverage_ratio ?? 0) * 100).toFixed(1)}%`;
+  const connectivityVal = isRunning ? '--%' : `${((result?.connectivity_ratio ?? 0) * 100).toFixed(1)}%`;
+  const energyVal = isRunning ? '-- J' : `${(result?.avg_energy ?? 0).toFixed(3)} J`;
+
+  const sensorsVal = bestPositions.length;
+  const sensorsSub = isRunning
+    ? `Iter ${iterationsRun} · Fit: ${liveFitness !== null ? liveFitness.toFixed(4) : '--'}`
+    : `${iterationsRun} iters · ${(result?.compute_time_seconds ?? 0).toFixed(2)}s`;
+
   const metrics = [
     {
       id: 'coverage',
       label: 'Coverage',
-      value: `${(result.coverage_ratio * 100).toFixed(1)}%`,
+      value: coverageVal,
       sub: 'Target ≥ 91%',
       color: 'var(--color-success)',
       glow: 'var(--color-success-glow)',
@@ -32,7 +50,7 @@ export default function LiveMetrics({ result }) {
     {
       id: 'connectivity',
       label: 'Connectivity',
-      value: `${(result.connectivity_ratio * 100).toFixed(1)}%`,
+      value: connectivityVal,
       sub: 'Nodes connected',
       color: 'var(--color-info)',
       glow: 'rgba(14,165,233,0.2)',
@@ -41,7 +59,7 @@ export default function LiveMetrics({ result }) {
     {
       id: 'energy',
       label: 'Avg Energy',
-      value: `${result.avg_energy.toFixed(3)} J`,
+      value: energyVal,
       sub: 'Per node remaining',
       color: 'var(--color-warning)',
       glow: 'rgba(251,191,36,0.2)',
@@ -50,8 +68,8 @@ export default function LiveMetrics({ result }) {
     {
       id: 'nodes',
       label: 'Sensors',
-      value: result.best_positions?.length ?? 0,
-      sub: `${result.iterations_run} iters · ${result.compute_time_seconds.toFixed(2)}s`,
+      value: sensorsVal,
+      sub: sensorsSub,
       color: '#a78bfa',
       glow: 'rgba(167,139,250,0.2)',
       icon: '⬤',

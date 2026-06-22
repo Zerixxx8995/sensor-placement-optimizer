@@ -34,6 +34,7 @@ export default function GridCanvas({
   areaHeight = 100,
   sensingRadius = 10,
   commRadius = 20,
+  children,
 }) {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
@@ -213,6 +214,7 @@ export default function GridCanvas({
           <span className="legend-label">Coverage Probability</span>
         </div>
       )}
+      {children}
     </div>
   );
 }
