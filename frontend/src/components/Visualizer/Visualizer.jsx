@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import GridCanvas from './GridCanvas';
 import LiveMetrics from './LiveMetrics';
 import ParticleLayer from './ParticleLayer';
+import ConvergenceChart from '../ConvergenceChart/ConvergenceChart';
 import { useSSEStream } from '../../hooks/useSSEStream';
 
 /**
@@ -21,13 +22,37 @@ import { useSSEStream } from '../../hooks/useSSEStream';
 export default function Visualizer({ result, config, jobId, status }) {
   const isRunning = status === 'running';
 
+  const [liveHistory, setLiveHistory] = useState([]);
+
+  // Clear live history when jobId changes
+  useEffect(() => {
+    setLiveHistory([]);
+  }, [jobId]);
+
   // Connect to SSE stream if the job is active
   const {
     particles,
     iteration,
     bestFitness,
     bestPositions,
-  } = useSSEStream(isRunning ? jobId : null);
+  } = useSSEStream(isRunning ? jobId : null, {
+    onIteration: (data) => {
+      setLiveHistory((prev) => {
+        if (prev.some((item) => item.iteration === data.iteration)) {
+          return prev;
+        }
+        return [...prev, { iteration: data.iteration, fitness: data.best_fitness }];
+      });
+    },
+  });
+
+  // Map fitness history: liveHistory if running, result.fitness_history if complete
+  const chartData = isRunning
+    ? liveHistory
+    : (result?.fitness_history || []).map((val, idx) => ({
+        iteration: idx,
+        fitness: val,
+      }));
 
   const areaWidth = config?.area?.width ?? 100;
   const areaHeight = config?.area?.height ?? 100;
@@ -109,6 +134,9 @@ export default function Visualizer({ result, config, jobId, status }) {
         liveIteration={iteration}
         liveFitness={bestFitness}
       />
+
+      {/* ─── Convergence Chart ──────────────────────────────────────── */}
+      <ConvergenceChart data={chartData} />
     </div>
   );
 }
