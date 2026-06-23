@@ -684,4 +684,47 @@ header {
   color: var(--color-success) !important;
 }
 
+/* Strategy Comparison Benchmarks & Table */
+.comparison-table-card {
+  padding: 1.5rem;
+}
+
+.compare-table th {
+  border-bottom: 2px solid var(--border-color);
+  color: var(--text-secondary);
+  font-size: 0.80rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.compare-table tr:hover {
+  background: rgba(255, 255, 255, 0.02) !important;
+}
+
+.compare-table tr.row-active:hover {
+  background: rgba(99, 102, 241, 0.12) !important;
+}
+
+.compare-table td {
+  border-bottom: 1px solid var(--border-color);
+}
+
+.compare-table tr:last-child td {
+  border-bottom: none;
+}
+
+.compare-table .strategy-name {
+  font-family: var(--font-sans);
+}
+
+.best-metric {
+  font-weight: 700 !important;
+}
+
+.best-star {
+  font-size: 0.75rem;
+  vertical-align: super;
+}
+
+
 

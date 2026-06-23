@@ -4,6 +4,8 @@ import LiveMetrics from './LiveMetrics';
 import ParticleLayer from './ParticleLayer';
 import ConvergenceChart from '../ConvergenceChart/ConvergenceChart';
 import FaultInjector from '../FaultInjector/FaultInjector';
+import ComparisonTable from '../ComparisonTable/ComparisonTable';
+import { compareService } from '../../api/compareService';
 import { useSSEStream } from '../../hooks/useSSEStream';
 
 /**
@@ -26,11 +28,56 @@ export default function Visualizer({ result, config, jobId, status }) {
   const [liveHistory, setLiveHistory] = useState([]);
   const [faultResult, setFaultResult] = useState(null);
 
+  const [compareResult, setCompareResult] = useState(null);
+  const [isComparing, setIsComparing] = useState(false);
+  const [compareError, setCompareError] = useState(null);
+
   // Clear live history and fault simulation results when jobId changes
   useEffect(() => {
     setLiveHistory([]);
     setFaultResult(null);
+    setCompareResult(null);
+    setIsComparing(false);
+    setCompareError(null);
   }, [jobId]);
+
+  // Synchronously fetch baseline comparison metrics on completion
+  useEffect(() => {
+    if (status !== 'complete' || !config || !jobId) {
+      setCompareResult(null);
+      setIsComparing(false);
+      setCompareError(null);
+      return;
+    }
+
+    let isMounted = true;
+
+    const fetchComparison = async () => {
+      setIsComparing(true);
+      setCompareError(null);
+      try {
+        const res = await compareService.runComparison(config);
+        if (isMounted) {
+          setCompareResult(res);
+        }
+      } catch (err) {
+        console.error('Error running comparison:', err);
+        if (isMounted) {
+          setCompareError(err.message || 'Comparison failed');
+        }
+      } finally {
+        if (isMounted) {
+          setIsComparing(false);
+        }
+      }
+    };
+
+    fetchComparison();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [status, config, jobId]);
 
   const handleIteration = useCallback((data) => {
     setLiveHistory((prev) => {
@@ -157,6 +204,36 @@ export default function Visualizer({ result, config, jobId, status }) {
           onInject={setFaultResult}
           onReset={() => setFaultResult(null)}
         />
+      )}
+
+      {/* ─── Strategy Comparison Benchmarks ─────────────────────────── */}
+      {status === 'complete' && (
+        <div style={{ marginTop: '1.5rem' }}>
+          {isComparing && (
+            <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '120px', gap: '1rem' }}>
+              <div className="spinner" style={{
+                width: '30px',
+                height: '30px',
+                border: '2px solid rgba(99, 102, 241, 0.1)',
+                borderTop: '2px solid var(--color-primary)',
+                borderRadius: '50%',
+                animation: 'spin 1s linear infinite',
+              }} />
+              <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Running baseline strategy comparisons…</span>
+            </div>
+          )}
+          {compareError && (
+            <div className="glass-card" style={{ padding: '1rem', border: '1px solid rgba(244, 63, 94, 0.2)', background: 'rgba(244, 63, 94, 0.05)', color: 'var(--color-danger)', fontSize: '0.85rem' }}>
+              Failed to load strategy comparison benchmarks: {compareError}
+            </div>
+          )}
+          {compareResult && (
+            <ComparisonTable
+              results={compareResult.results}
+              activeStrategy={config?.strategy}
+            />
+          )}
+        </div>
       )}
     </div>
   );
