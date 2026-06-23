@@ -19,6 +19,7 @@ from app.middleware.error_handler import add_error_handlers
 from app.middleware.request_logger import RequestLoggerMiddleware
 from app.routers.optimize import router as optimize_router
 from app.routers.compare import router as compare_router
+from app.routers.fault import router as fault_router
 
 app = FastAPI(
     title="PSO Sensor Placement Optimizer",
@@ -55,6 +56,7 @@ add_error_handlers(app)
 
 app.include_router(optimize_router, prefix="/api/v1", tags=["Optimize"])
 app.include_router(compare_router, prefix="/api/v1", tags=["Compare"])
+app.include_router(fault_router, prefix="/api/v1", tags=["Fault"])
 
 # ---------------------------------------------------------------------------
 # Built-in endpoints
