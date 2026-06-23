@@ -46,7 +46,7 @@ export default function GridPainter() {
     return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
   }, []);
 
-  const maxCellsToRender = 1600; // max grid 40x40 for fluidity
+  const maxCellsToRender = 2500; // max grid 50x50 for fluidity (accommodates 43x43 = 1849 cells)
   const isGridTooLarge = totalCells > maxCellsToRender;
 
   return (
