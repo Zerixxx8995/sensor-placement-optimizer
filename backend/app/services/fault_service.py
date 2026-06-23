@@ -144,4 +144,5 @@ def _compute_fault_injection(
         "dropout_percent": dropout_percent,
         "coverage_map": degraded_cov_map.tolist(),
         "connectivity_ratio": degraded_connectivity,
+        "failed_indices": failed_indices.tolist(),
     }

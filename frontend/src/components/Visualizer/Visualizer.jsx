@@ -3,6 +3,7 @@ import GridCanvas from './GridCanvas';
 import LiveMetrics from './LiveMetrics';
 import ParticleLayer from './ParticleLayer';
 import ConvergenceChart from '../ConvergenceChart/ConvergenceChart';
+import FaultInjector from '../FaultInjector/FaultInjector';
 import { useSSEStream } from '../../hooks/useSSEStream';
 
 /**
@@ -23,10 +24,12 @@ export default function Visualizer({ result, config, jobId, status }) {
   const isRunning = status === 'running';
 
   const [liveHistory, setLiveHistory] = useState([]);
+  const [faultResult, setFaultResult] = useState(null);
 
-  // Clear live history when jobId changes
+  // Clear live history and fault simulation results when jobId changes
   useEffect(() => {
     setLiveHistory([]);
+    setFaultResult(null);
   }, [jobId]);
 
   // Connect to SSE stream if the job is active
@@ -62,7 +65,13 @@ export default function Visualizer({ result, config, jobId, status }) {
   // Render live positions when running, fallback to final result when complete
   const displayResult = isRunning
     ? { best_positions: bestPositions, coverage_map: null }
-    : result;
+    : faultResult
+      ? {
+          ...result,
+          coverage_map: faultResult.coverage_map,
+          failed_indices: faultResult.failed_indices,
+        }
+      : result;
 
   return (
     <div className="visualizer-container">
@@ -137,6 +146,16 @@ export default function Visualizer({ result, config, jobId, status }) {
 
       {/* ─── Convergence Chart ──────────────────────────────────────── */}
       <ConvergenceChart data={chartData} />
+
+      {/* ─── Fault Injector Simulation ───────────────────────────────── */}
+      {status === 'complete' && result && (
+        <FaultInjector
+          jobId={jobId}
+          originalResult={result}
+          onInject={setFaultResult}
+          onReset={() => setFaultResult(null)}
+        />
+      )}
     </div>
   );
 }

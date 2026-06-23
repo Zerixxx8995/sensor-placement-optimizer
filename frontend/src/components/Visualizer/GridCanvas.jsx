@@ -42,6 +42,7 @@ export default function GridCanvas({
   // ─── Derived data ──────────────────────────────────────────────────────────
   const positions = useMemo(() => result?.best_positions ?? [], [result]);
   const coverageMap = useMemo(() => result?.coverage_map ?? null, [result]);
+  const failedIndices = useMemo(() => result?.failed_indices ?? [], [result]);
 
   // Pre-build communication edges so we don't recompute on every render.
   const commLinks = useMemo(
@@ -115,7 +116,8 @@ export default function GridCanvas({
 
     // ── Layer 2: Sensing radius rings ───────────────────────────────────────
     const rsPixels = (sensingRadius / areaWidth) * W;
-    positions.forEach(([wx, wy]) => {
+    positions.forEach(([wx, wy], idx) => {
+      if (failedIndices.includes(idx)) return;
       const { px, py } = worldToCanvas(wx, wy, areaWidth, areaHeight, W, H);
       ctx.beginPath();
       ctx.arc(px, py, rsPixels, 0, Math.PI * 2);
@@ -130,6 +132,7 @@ export default function GridCanvas({
     ctx.strokeStyle = 'rgba(14, 165, 233, 0.35)';
     ctx.lineWidth = 0.8;
     commLinks.forEach(([i, j]) => {
+      if (failedIndices.includes(i) || failedIndices.includes(j)) return;
       const { px: x1, py: y1 } = worldToCanvas(
         positions[i][0], positions[i][1], areaWidth, areaHeight, W, H
       );
@@ -144,34 +147,47 @@ export default function GridCanvas({
 
     // ── Layer 4: Sensor nodes ───────────────────────────────────────────────
     const nodeRadius = Math.max(4, Math.min(8, W / 80));
-    positions.forEach(([wx, wy]) => {
+    positions.forEach(([wx, wy], idx) => {
       const { px, py } = worldToCanvas(wx, wy, areaWidth, areaHeight, W, H);
 
-      // Glow halo
-      const glow = ctx.createRadialGradient(px, py, 0, px, py, nodeRadius * 2.5);
-      glow.addColorStop(0, 'rgba(99, 102, 241, 0.35)');
-      glow.addColorStop(1, 'rgba(99, 102, 241, 0)');
-      ctx.beginPath();
-      ctx.arc(px, py, nodeRadius * 2.5, 0, Math.PI * 2);
-      ctx.fillStyle = glow;
-      ctx.fill();
+      if (failedIndices.includes(idx)) {
+        // Draw red ✕ marker for failed node
+        ctx.beginPath();
+        ctx.strokeStyle = 'var(--color-danger)';
+        ctx.lineWidth = 2;
+        const size = nodeRadius;
+        ctx.moveTo(px - size, py - size);
+        ctx.lineTo(px + size, py + size);
+        ctx.moveTo(px - size, py + size);
+        ctx.lineTo(px + size, py - size);
+        ctx.stroke();
+      } else {
+        // Glow halo
+        const glow = ctx.createRadialGradient(px, py, 0, px, py, nodeRadius * 2.5);
+        glow.addColorStop(0, 'rgba(99, 102, 241, 0.35)');
+        glow.addColorStop(1, 'rgba(99, 102, 241, 0)');
+        ctx.beginPath();
+        ctx.arc(px, py, nodeRadius * 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = glow;
+        ctx.fill();
 
-      // Node body
-      ctx.beginPath();
-      ctx.arc(px, py, nodeRadius, 0, Math.PI * 2);
-      ctx.fillStyle = '#6366f1';
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,0.6)';
-      ctx.lineWidth = 1;
-      ctx.stroke();
+        // Node body
+        ctx.beginPath();
+        ctx.arc(px, py, nodeRadius, 0, Math.PI * 2);
+        ctx.fillStyle = '#6366f1';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
 
-      // Highlight dot
-      ctx.beginPath();
-      ctx.arc(px - nodeRadius * 0.3, py - nodeRadius * 0.3, nodeRadius * 0.28, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255,255,255,0.7)';
-      ctx.fill();
+        // Highlight dot
+        ctx.beginPath();
+        ctx.arc(px - nodeRadius * 0.3, py - nodeRadius * 0.3, nodeRadius * 0.28, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255,255,255,0.7)';
+        ctx.fill();
+      }
     });
-  }, [positions, coverageMap, commLinks, areaWidth, areaHeight, sensingRadius]);
+  }, [positions, coverageMap, commLinks, areaWidth, areaHeight, sensingRadius, failedIndices]);
 
   // ─── Resize observer ───────────────────────────────────────────────────────
   useEffect(() => {
