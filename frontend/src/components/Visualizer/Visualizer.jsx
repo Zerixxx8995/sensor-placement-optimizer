@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import GridCanvas from './GridCanvas';
 import LiveMetrics from './LiveMetrics';
 import ParticleLayer from './ParticleLayer';
@@ -32,6 +32,15 @@ export default function Visualizer({ result, config, jobId, status }) {
     setFaultResult(null);
   }, [jobId]);
 
+  const handleIteration = useCallback((data) => {
+    setLiveHistory((prev) => {
+      if (prev.some((item) => item.iteration === data.iteration)) {
+        return prev;
+      }
+      return [...prev, { iteration: data.iteration, fitness: data.best_fitness }];
+    });
+  }, []);
+
   // Connect to SSE stream if the job is active
   const {
     particles,
@@ -39,14 +48,7 @@ export default function Visualizer({ result, config, jobId, status }) {
     bestFitness,
     bestPositions,
   } = useSSEStream(isRunning ? jobId : null, {
-    onIteration: (data) => {
-      setLiveHistory((prev) => {
-        if (prev.some((item) => item.iteration === data.iteration)) {
-          return prev;
-        }
-        return [...prev, { iteration: data.iteration, fitness: data.best_fitness }];
-      });
-    },
+    onIteration: handleIteration,
   });
 
   // Map fitness history: liveHistory if running, result.fitness_history if complete

@@ -25,6 +25,17 @@ export function useSSEStream(jobId, options = {}) {
 
   const eventSourceRef = useRef(null);
 
+  // Sync callbacks to mutable refs so the EventSource effect is stable and only depends on jobId
+  const onIterationRef = useRef(onIteration);
+  const onCompleteRef = useRef(onComplete);
+  const onFailedRef = useRef(onFailed);
+
+  useEffect(() => {
+    onIterationRef.current = onIteration;
+    onCompleteRef.current = onComplete;
+    onFailedRef.current = onFailed;
+  }, [onIteration, onComplete, onFailed]);
+
   useEffect(() => {
     // If no jobId is active, reset state and return
     if (!jobId) {
@@ -59,16 +70,16 @@ export function useSSEStream(jobId, options = {}) {
           setBestFitness(data.best_fitness);
           setBestPositions(data.best_positions);
           setParticles(data.particles);
-          if (onIteration) onIteration(data);
+          if (onIterationRef.current) onIterationRef.current(data);
         } else if (data.event === 'complete') {
           setConnected(false);
           es.close();
-          if (onComplete) onComplete(data.result);
+          if (onCompleteRef.current) onCompleteRef.current(data.result);
         } else if (data.event === 'failed') {
           setConnected(false);
           setError(data.error);
           es.close();
-          if (onFailed) onFailed(data.error);
+          if (onFailedRef.current) onFailedRef.current(data.error);
         }
       } catch (err) {
         console.error('Error parsing SSE event data:', err);
@@ -81,7 +92,7 @@ export function useSSEStream(jobId, options = {}) {
       setError('Connection interrupted or closed.');
       setConnected(false);
       es.close();
-      if (onFailed) onFailed('EventSource connection error');
+      if (onFailedRef.current) onFailedRef.current('EventSource connection error');
     };
 
     return () => {
@@ -89,7 +100,7 @@ export function useSSEStream(jobId, options = {}) {
         es.close();
       }
     };
-  }, [jobId, onIteration, onComplete, onFailed]);
+  }, [jobId]);
 
   return {
     particles,
